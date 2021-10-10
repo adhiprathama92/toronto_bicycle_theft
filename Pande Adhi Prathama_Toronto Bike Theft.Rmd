@@ -1,5 +1,5 @@
 ---
-title: "Cluster Analysis of Neigbourhoods in Toronto Based on Bicycle Theft Cases"
+title: "Cluster Analysis of Neigbourhoods in Toronto Based on Bicycle Theft Case"
 author: "Pande Adhi Prathama"
 date: "01/10/2021"
 output: html_document
