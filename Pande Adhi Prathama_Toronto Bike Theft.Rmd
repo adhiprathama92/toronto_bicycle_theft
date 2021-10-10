@@ -35,8 +35,8 @@ Some variables from original dataset have been removed from the analysis, with d
 
 ```{r, message=FALSE}
 bike_theft <- read.csv(url("https://raw.githubusercontent.com/adhiprathama92/toronto_bicycle_theft_data/main/Bicycle_Thefts.csv"))
-bike_theft <- bike_theft %>%
-  select(-c("ï..X", "Y", "Hood_ID", "Occurrence_Year", "Occurrence_Month","Occurrence_DayOfWeek","Occurrence_DayOfMonth","Occurrence_DayOfYear","Occurrence_Hour","Report_Year", "Report_Month","Report_DayOfWeek","Report_DayOfMonth","Report_DayOfYear","Report_Hour", "Longitude", "Latitude", "ObjectId2", "Bike_Make", "Bike_Model", "Bike_Speed", "Bike_Colour", "Cost_of_Bike"))
+bike_theft <- data.frame(bike_theft %>%
+  select(-c("ï..X", "Y", "Hood_ID", "Occurrence_Year", "Occurrence_Month","Occurrence_DayOfWeek","Occurrence_DayOfMonth","Occurrence_DayOfYear","Occurrence_Hour","Report_Year", "Report_Month","Report_DayOfWeek","Report_DayOfMonth","Report_DayOfYear","Report_Hour", "Longitude", "Latitude", "ObjectId2", "Bike_Make", "Bike_Model", "Bike_Speed", "Bike_Colour", "Cost_of_Bike")))
 bike_theft
 ```
 
@@ -310,7 +310,7 @@ bike_theft %>%
 ```{r, message=FALSE}
 # List of Next Top 30 Neighbourhoods
 next_top_30_neighbourhood <- bike_theft %>%
-  filter(!NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  filter(!NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName))) %>%
   group_by(NeighbourhoodName) %>%
   summarise(count = n()) %>%
   arrange(desc(count)) %>%
@@ -469,7 +469,7 @@ rownames(k_means_bike_theft) = bike_theft_clustering$NeighbourhoodName
 Using Elbow Method, we can draw conclusion that *optimal K value is 2* because this is the point where total within sum of square drops a lot.
 
 ```{r}
-fviz_nbclust(df, kmeans, method = 'wss')
+fviz_nbclust(k_means_bike_theft, kmeans, method = 'wss')
 ```
 
 ## Determine K value using Silhouette Method
@@ -477,7 +477,7 @@ fviz_nbclust(df, kmeans, method = 'wss')
 Using Silhouette Method, we can draw conclusion that *optimal K value is 2* because this is the point where average silhouette width is higher.
 
 ```{r}
-fviz_nbclust(df, kmeans, method = 'silhouette')
+fviz_nbclust(k_means_bike_theft, kmeans, method = 'silhouette')
 ```
 
 ## Final K-Means Clustering
