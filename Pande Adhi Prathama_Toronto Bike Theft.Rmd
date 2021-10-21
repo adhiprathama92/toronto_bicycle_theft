@@ -1,8 +1,10 @@
 ---
-title: "Cluster Analysis of Neigbourhoods in Toronto Based on Bicycle Theft Case"
+title: "Data Analysis on Neigbourhoods in Toronto Based on Bicycle Theft Cases"
 author: "Pande Adhi Prathama"
 date: "01/10/2021"
-output: html_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 # Prologue
@@ -12,11 +14,15 @@ In this exercise, we aim to perform cluster analysis of neighbourhoods in Toront
 To perform the analysis, we use following libraries.
 
 ```{r, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(lubridate)
 library(factoextra)
+library(ggpubr)
+library(knitr)
+library(janitor)
 ```
 
 The data set we use to perform the analysis is provided by Toronto Police Service (link: <https://data.torontopolice.on.ca/datasets/bicycle-thefts/explore?location=43.727864%2C-79.122754%2C9.64>).
@@ -27,16 +33,16 @@ Some variables from original dataset have been removed from the analysis, with d
 
 -   "Hood_ID": as this variable contains similar information to "NeighbourhoodName".
 
--   Details of Occurrence and Report Dates (e.g Day, Month, Year, etc).
+-   Details of Occurrence and Report Dates (e.g Day, Month, Year, etc), as we can refer to "Occurrence Date" and "Report Date".
 
 -   Detailed information of stolen bicycles, apart from 'Bike_Type' variable: as we are more interested to the number of case instead of bike.
 
--   "ObjectId2": as this variable contains similar information to "OBJECTID"
+-   "OBJECTID", "event_unique_id", and "ObjectId2": as these variables only show up 
 
 ```{r, message=FALSE}
 bike_theft <- read.csv(url("https://raw.githubusercontent.com/adhiprathama92/toronto_bicycle_theft_data/main/Bicycle_Thefts.csv"))
-bike_theft <- data.frame(bike_theft %>%
-  select(-c("ï..X", "Y", "Hood_ID", "Occurrence_Year", "Occurrence_Month","Occurrence_DayOfWeek","Occurrence_DayOfMonth","Occurrence_DayOfYear","Occurrence_Hour","Report_Year", "Report_Month","Report_DayOfWeek","Report_DayOfMonth","Report_DayOfYear","Report_Hour", "Longitude", "Latitude", "ObjectId2", "Bike_Make", "Bike_Model", "Bike_Speed", "Bike_Colour", "Cost_of_Bike")))
+bike_theft <- bike_theft %>%
+  select(-c("ï..X", "Y", "Hood_ID", "Occurrence_Year", "Occurrence_Month","Occurrence_DayOfWeek","Occurrence_DayOfMonth","Occurrence_DayOfYear","Occurrence_Hour","Report_Year", "Report_Month","Report_DayOfWeek","Report_DayOfMonth","Report_DayOfYear","Report_Hour", "Longitude", "Latitude", "Bike_Make", "Bike_Model", "Bike_Speed", "Bike_Colour", "Cost_of_Bike","OBJECTID", "event_unique_id", "ObjectId2"))
 bike_theft
 ```
 
@@ -109,7 +115,7 @@ In this section, we are interested to know which variables that have zero or nea
 ```{r}
 caret::nearZeroVar(bike_theft,saveMetrics = TRUE)
 ```
-
+<br>
 Notice that though **'Status'** and **'City'** variables still has unique values (zeroVar = FALSE), but their respective modus value is obviously outnumbered the second modus by looking at freqRatio. Hence, their near zero variance (nzv) is classified as TRUE.
 
 The following barchart shows up all available value in **"Status"** variable. We notice that 'Stolen' value is far outnumbered 'Unknown' and 'Recovered', meaning that we might not find any insight from this variable.
@@ -119,320 +125,233 @@ Hence, we can delete **"Status"** variable.
 ```{r, fig.width=12}
 bike_theft %>%
   count(Status) %>%
-  ggplot(aes(y = reorder(Status, n), x = n)) + 
+  ggplot(aes(y = reorder(Status, n), x = n, fill = reorder(Status, n))) + 
   geom_bar(stat="identity") + 
   theme_bw() + 
   geom_text(aes(label=n), position=position_dodge(width=0.8), hjust= -0.2) +
   xlab("Number of Cases") + 
   ylab("Status") +
-  ggtitle("Number of Cases by Case Status")
+  scale_fill_brewer(palette="Dark2") +
+  ggtitle("Number of Cases by Case Status") +
+  theme(
+    legend.title = element_blank(),
+  )
 ```
 
-For **'City'** variable, we notice that there is 'NSA' value. 'NSA' stands for 'Not Specific Area', meaning the theft case is either located outside the city of Toronto or invalidated locations ( refer to: <https://torontops.maps.arcgis.com/sharing/rest/content/items/c0b17f1888544078bf650f3b8b04d35d/data> ).
+<br>For **'City'** variable, we notice that there is 'NSA' value. 'NSA' stands for 'Not Specific Area', meaning the theft case is either located outside the city of Toronto or invalidated locations ( refer to: <https://torontops.maps.arcgis.com/sharing/rest/content/items/c0b17f1888544078bf650f3b8b04d35d/data> ).
 
-As such, we will take out also 'City' Variable.
+As such, we will take out also 'City' variable.
 
 ```{r, fig.width=12}
 bike_theft %>%
   count(City) %>%
-  ggplot(aes(y = reorder(City, n), x = n)) + 
+  ggplot(aes(y = reorder(City, n), x = n, fill = reorder(City, n))) + 
   geom_bar(stat="identity") + 
   theme_bw() + 
   geom_text(aes(label=n), position=position_dodge(width=0.8), hjust= -0.2) +
+  xlim(0, 30000) +
   xlab("Number of Cases") + 
   ylab("City") +
-  ggtitle("Number of Cases by City")
+  ggtitle("Number of Cases by City") +
+  scale_fill_brewer(palette="Dark1") +
+  theme(
+    legend.title = element_blank(),
+  )
 ```
 
-## Exploring Primary Offence Variable
+## Cleaning "NeighbourhoodName" Data
 
-We notice that are 66 possible primary offence types.
+We also notice there is NSA value in "NeighbourhoodName" variable, hence the entries with "NSA" value in "NeighbourhoodName" variable are also taken out.
+
 
 ```{r}
-unique(bike_theft$Primary_Offence)
-```
-
-However, looking further at the variable, we figure out the 'theft under' value outnumbered other primary offence types.
-
-Hence, we may take out also **'Primary_Offence'** variable.
-
-```{r, fig.width=12}
 bike_theft %>%
-  group_by(Primary_Offence) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n)) %>%
-  head(20) %>%
-  ggplot(aes(y= reorder(Primary_Offence, n), x= n)) + geom_bar(stat='identity')+
-  xlab("Number of Cases") + 
-  ylab("Primary Offence") +
-  ggtitle("Number of Cases by Primary Offence")
+  count(NeighbourhoodName) %>%
+  arrange(n)
 ```
 
 ## Cleaned Dataset
 
-Here is our dataset looks like after taking out 'Status', 'City', and 'Primary Offence' variables.
+Here is our dataset looks like after taking out 'Status', 'City', and 'Occurrence_Date' variables, in addition to remove entries with 'NSA' value in 'NeighbourhoodName' variable.
 
 ```{r}
 bike_theft <- bike_theft %>%
-  select(-c(Status, City, Primary_Offence))
+  select(-c(Occurrence_Date, City, Status)) %>%
+  filter(NeighbourhoodName != "NSA")
 bike_theft
 ```
 
-# Exploratory Data Analysis
-
-## Exploring Premises Type
-
-It is understood that bicycle are prone to be stolen when it is parked at outdoor, followed by residential areas like apartments and houses.
-
-```{r, fig.width=12}
-bike_theft %>%
-  group_by(Premises_Type) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n)) %>%
-  ggplot(aes(y= reorder(Premises_Type, n), x= n)) + geom_bar(stat='identity') +
-  geom_text(aes(label=n), position=position_dodge(width=0.8), hjust= -0.2)+
-  xlab("Number of Cases") + 
-  ylab("Premises Type") +
-  ggtitle("Number of Cases by Premises Type")
-```
-
-## Exploring Bike Type
-
-Mountain bike becomes the most stolen bike type, followed by Regular.
-
-```{r, fig.width=12}
-bike_theft %>%
-  group_by(Bike_Type) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n)) %>%
-  ggplot(aes(y= reorder(Bike_Type, n), x= n)) + geom_bar(stat='identity') +
-  geom_text(aes(label=n), position=position_dodge(width=0.8), hjust= -0.2) +
-  xlab("Number of Cases") + 
-  ylab("Premises Type") +
-  ggtitle("Number of Cases by Bike Type")
-```
-
-## Exploring Cases by Report Day
-
-Notice that the most cases is reported on Monday, while less cases reported on weekends.
-
-```{r}
-# by day
-bike_theft %>%
-  mutate(weekday_name = weekdays(Report_Date)) %>%
-  group_by(weekday_name) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + geom_bar(stat='identity') +
-  geom_text(aes(label=count), position=position_dodge(width=0.5), vjust= -0.5) +
-  ylim(0,5000) +
-  xlab("Day of Week") +
-  ylab("Number of Cases") +
-  ggtitle("Number of Cases by Reported Day") 
-```
+# Analysis
 
 ## Exploring Cases by Neighbourhood
 
-To explore cases by neighbourhood, we are interested to utilise Pareto analysis to determine which neighbourhood that contributes to 50% and 80% of all bicycle theft cases.
+To explore cases by neighbourhood, we are interested to utilise Pareto analysis to determine which neighbourhood that are:
+- being in top 10 contributors to overall bicycle theft cases
+- outside top 10 but still contribute to 80% of all bicycle theft cases
+- rest of neighbourhoods that do not fall into above categories
 
 To do this, we calculate number of cases by Neighbourhood and arrange in descending manner. Here we add "Cummulative_Percentage" variable to indicate cummulative contribution of each neighbourhood.
 
 ```{r}
-bike_theft %>%
+bike_theft_by_neighbourhood <- bike_theft %>%
   group_by(NeighbourhoodName) %>%
   summarise(Frequency = n()) %>%
   arrange(desc(Frequency)) %>%
-  mutate(Cummulative_Percentage = cumsum(Frequency)/nrow(bike_theft))
+  mutate(Cummulative_Percentage = cumsum(Frequency)*100/nrow(bike_theft))
+bike_theft_by_neighbourhood
 ```
 
-From here, we can see **12 neighbourhoods racks up around 50% of overall bike theft cases** in Toronto, while **other 30 neighbourhoods add up the number to around 80%**. Meanwhile the rest **99 neighbourhoods only contributes to 20% of overall bike theft cases**.
+<br>
+From here, we can see **10 neighbourhoods racks up around 47% of overall bike theft cases** in Toronto, while **other 32 neighbourhoods add up the number to around 80%**. Meanwhile the rest **98 neighbourhoods only contributes to 20% of overall bike theft cases**.
 
-### Top 12 Neighbourhood (contribution to number of cases around 50%)
+We classify neighbourhoods into 3 groups called **"Top 10 Neighbourhoods"**, **"Next Top 32 Neighbourhoods"**, **"Rest of Neighbourhoods"** going forward.
 
-```{r, fig.width=12}
-# List of Top 12 Neighbourhoods
-top_12_neighbourhood <- bike_theft %>%
+```{r}
+# List of Top 10 Neighbourhoods (contribution to overall theft cases = 47%)
+top_10_neighbourhood <- bike_theft %>%
   group_by(NeighbourhoodName) %>%
-  summarise(n = n()) %>%
-  arrange(desc(n)) %>%
-  head(12)
-top_12_neighbourhood %>%
-  ggplot(aes(x= reorder(NeighbourhoodName, n), y= n)) + geom_bar(stat='identity') + coord_flip() + geom_text(aes(label=n), position=position_dodge(width=0.8), hjust= -0.2) +
-  xlab("Number of Cases") +
-  ylab("Neighbourhood") +
-  ggtitle("Number of Cases from Top 12 Neighbourhood (contributed to 50% number of cases)") 
-```
+  summarise(Number_of_Cases = n()) %>%
+  arrange(desc(Number_of_Cases)) %>%
+  head(10)
 
-Here we are interested to deep dive on exploring **top 12 neighbourhoods by premises type**. We notice that among the neighbourhood group, the majority of bicycle theft occured when the bicycle is parked outside.
-
-```{r, message=FALSE}
-# by Premises Type
-bike_theft %>%
-  filter(NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, Premises_Type) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=Premises_Type, y = count)) + geom_boxplot()+
-  xlab("Premise Type") +
-  ylab("Number of Cases") +
-  ggtitle("Boxplot Number of Cases from Top 12 Neighbourhood by Premises Type")
-```
-
-Deep dive to **Bike Type**, it shows similar pattern to overall neighbourhoods, which Mountain Bike and Regular Bike are the two most stolen bike in Top 12 neighbourhoods.
-
-```{r, message=FALSE}
-# by Bike Type
-bike_theft %>%
-  filter(NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, Bike_Type) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=Bike_Type, y = count)) + geom_boxplot()+
-  xlab("Bike Type") +
-  ylab("Number of Cases") +
-  ggtitle("Boxplot Number of Cases from Top 12 Neighbourhood by Bike Type")
-```
-
-Deep dive to **Reported Day**, it also aligned with our finding in overall neighbourhoods.
-
-```{r, message=FALSE}
-# by day
-bike_theft %>%
-  mutate(weekday_name = weekdays(Report_Date)) %>%
-  filter(NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, weekday_name) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + geom_boxplot() +
-  xlab("Day of Week") +
-  ylab("Number of Cases") +
-  ggtitle("Boxplot Number of Cases from Top 12 Neighbourhood by Reported Day")
-```
-
-### Next Top 30 Neighbourhoods (contribution to number of cases around 30%)
-
-```{r, message=FALSE}
-# List of Next Top 30 Neighbourhoods
-next_top_30_neighbourhood <- bike_theft %>%
-  filter(!NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName))) %>%
+# List of Next Top 32 Neighbourhoods (contribution to overall theft cases = 33%)
+next_top_32_neighbourhood <- bike_theft %>%
+  filter(!NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
   group_by(NeighbourhoodName) %>%
   summarise(count = n()) %>%
   arrange(desc(count)) %>%
-  head(30)
-next_top_30_neighbourhood
-```
+  head(32)
 
-Here we are interested to deep dive on exploring **next top 30 neighbourhoods by premise type**. We notice that among the neighbourhood group, the number of cases are quite similar among outdoor, apartments and houses.
-
-```{r, message=FALSE}
-bike_theft %>%
-  filter(NeighbourhoodName %in% c(unique(next_top_30_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, Premises_Type) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=Premises_Type, y = count)) + geom_boxplot() +
-  xlab("Premise Type") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from Next Top 30 Neighbourhood by Premise Type")
-```
-
-Deep dive to **Bike Type**, it shows similar pattern to overall neighbourhoods, which Mountain Bike and Regular Bike are the two most stolen bike in Next Top 30 neighbourhoods.
-
-```{r, message=FALSE}
-# by Bike Type
-bike_theft %>%
-  filter(NeighbourhoodName %in% c(unique(next_top_30_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, Bike_Type) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=Bike_Type, y = count)) + geom_boxplot()+
-  xlab("Bike Type") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from Next Top 30 Neighbourhood by Bike Type")
-```
-
-Deep dive to **Reported Day**, it also aligned with our finding in overall neighbourhoods.
-
-```{r, message=FALSE}
-# by day
-bike_theft %>%
-  mutate(weekday_name = weekdays(Report_Date)) %>%
-  filter(NeighbourhoodName %in% c(unique(next_top_30_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, weekday_name) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + geom_boxplot()+
-  xlab("Day of Week") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from Next Top 30 Neighbourhood by Reported Day")
-```
-
-### Rest 99 Neighbourhoods (contribution to number of cases around 30%)
-
-```{r}
-# List of Rest of Neighbourhoods 
+# List of The Rest 98 Neighbourhoods (contribution to overall theft cases = 20%)
 other_neighbourhood <- bike_theft %>%
-  filter(!NeighbourhoodName %in% c(unique(top_12_neighbourhood$NeighbourhoodName)) & 
-          !NeighbourhoodName %in% c(unique(next_top_30_neighbourhood$NeighbourhoodName))
+  filter(!NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName)) & 
+          !NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))
          ) %>%
   group_by(NeighbourhoodName) %>%
   summarise(count = n()) %>%
   arrange(desc(count))
-other_neighbourhood
 ```
 
-Here we are interested to deep dive on exploring **next top 30 neighbourhoods by premise type**. We notice that the pattern looks quite similar to Next Top 30 Neighbourhoods group, which the number of cases are quite similar among outdoor, apartments and houses.
+Here are the list of Top 10 Neighbourhoods, including their respective number of cases.
+
+```{r}
+top_10_neighbourhood %>%
+  ggplot(aes(x=Number_of_Cases, y=reorder(NeighbourhoodName, Number_of_Cases))) +
+  geom_bar(stat="identity", fill = "#FFDB6D") +
+  theme_bw() + 
+  geom_text(aes(label=Number_of_Cases), size = 3, position=position_dodge(width=0.8), hjust= -0.2) +
+  xlim(0, 3000) +
+  xlab("Number of Cases") + 
+  ylab("Neighbourhood") +
+  ggtitle("Top 10 Neighbourhoods by Number of Bicycle Theft Cases")+
+  theme(
+    plot.title = element_text(size = 10, face = "bold", hjust = -2.2),
+    axis.title = element_text(size = 8, face = "bold"),
+    axis.text = element_text(size = 8)
+  )
+```
+
+
+## Exploring Cases by Premise Type
 
 ```{r, message=FALSE}
-bike_theft %>%
+# bar chart of number of cases across neighbourhoods by premise type
+premise_type_overall <- bike_theft %>%
+  group_by(Premises_Type) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x=reorder(Premises_Type, -n), y= n)) + 
+  geom_bar(stat='identity', fill = "#2B60DE") +
+  geom_text(aes(label=n), position=position_dodge(width=0.5), vjust= -0.5, size = 3) +
+  ylab("Number of Cases") + 
+  xlab("Premise Type") +
+  ggtitle("Overall Neighbourhoods") +
+  theme_bw()+
+  ylim(0, 9000)+
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(size = 10, hjust = -0.095, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9)
+  )
+
+# boxplot of number of cases in Top 10 neighbourhoods by premise type
+premise_type_top_10 <- bike_theft %>%
+  filter(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, Premises_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(Premises_Type, levels=c("Outside", "Apartment", "House", "Commercial", "Other", "Educational", "Transit")), y = count)) + 
+  geom_boxplot(fill = "#FFDB6D", color = "#C4961A")+
+  xlab("Premise Type") +
+  ylab("Number of Cases") +
+  ggtitle("Top 10") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in Next 32 neighbourhoods by premise type   
+premise_type_next_32 <- bike_theft %>%
+  filter(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, Premises_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(Premises_Type, levels=c("Outside", "Apartment", "House", "Commercial", "Other", "Educational", "Transit")), y = count)) + 
+  geom_boxplot(color = "#306754", fill = "#50C878") +
+  xlab("Premise Type") +
+  #ylab("Number of Cases") +
+  ggtitle("Next Top 32") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in Rest 98 neighbourhoods by premise type 
+premise_type_others <- bike_theft %>%
   filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
   group_by(NeighbourhoodName, Premises_Type) %>%
   summarise(count = n()) %>%
-  ggplot(aes(x=Premises_Type, y = count)) + geom_boxplot() +
+  ggplot(aes(x=factor(Premises_Type, levels=c("Outside", "Apartment", "House", "Commercial", "Other", "Educational", "Transit")), y = count)) + 
+  geom_boxplot(color = "#F70D1A", fill = "#FF69B4") +
   xlab("Premise Type") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from The Rest 99 Neighbourhood by Premise Type")
+  #ylab("Number of Cases") +
+  ggtitle("Rest of Neighbourhoods") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+#combine altogether into a plot
+annotate_figure(ggarrange(premise_type_overall,
+                          ggarrange(premise_type_top_10,
+                                    premise_type_next_32, 
+                                    premise_type_others, 
+                                    nrow = 1, 
+                                    ncol = 3),
+                          nrow = 2,
+                          ncol = 1),
+                top = text_grob(expression(atop(bold("Number of Bicycle Theft Cases in Toronto by Premise Type (2014 - 2020)"), scriptstyle("Top 10 Neighbourhoods represent 47% of total cases, while Next Top 32 and The Rest contribute to 33% and 20% respectively"))))
+                )
 ```
+<br>
+It is understood that the bicycle parked outside building premises seems more prone to be thieved, followed by residential areas (i.e apartments and houses). This is aligned with cases observed in Top 10 neighbourhoods,
 
-Deep dive to **Bike Type**, it shows similar pattern to overall neighbourhoods, which Mountain Bike and Regular Bike are the two most stolen bike in the Rest 99 Neighbourhoods group.
+Meanwhile, in Next Top 32 Neighbourhoods and Rest of Neighbourhoods groups, number of cases outside, apartment and house show almost similar median value. 
 
-```{r, message=FALSE}
-# by Bike Type
-bike_theft %>%
-  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, Bike_Type) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=Bike_Type, y = count)) + geom_boxplot()+
-  xlab("Bike Type") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from The Rest 99 Neighbourhood by Bike Type")
-```
+We might consider premise type as the variable to distingusih "Top 10" among other neighborhoods. To re-confirm this, we can use K-Means Clustering.
 
-Deep dive to **Reported Day**, it also aligned with our finding in overall neighbourhoods.
+## K-Means Clustering
 
-```{r, message=FALSE}
-# by day
-bike_theft %>%
-  mutate(weekday_name = weekdays(Report_Date)) %>%
-  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
-  group_by(NeighbourhoodName, weekday_name) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + geom_boxplot() +
-  xlab("Day of Week") +
-  ylab("Neighbourhood") +
-  ggtitle("Boxplot Number of Cases from The Rest 99 Neighbourhood by Reported Day")
-```
+### Data Pre-processing
 
-## Insights from EDA
-
-From exploratory data analysis above, we can draw insights as follow.
-
--   12 neighbourhoods are contributed to around 50% of overall reported bicycle theft cases in Toronto from 2014 - 2020. Majority of cases from this neighbourhood group happened when the bicycle is parked outside building premises.
-
--   Meanwhile, both next top 30 neighbourhoods (contributed to around 30% of total cases) and rest 99 neighbourhoods show similar pattern in terms of theft premises, which the number of cases happened outside building premises, apartments, and houses almost shared the same figures.
-
--   In terms of stolen bike type and case reported day, there is no significant different pattern across neighbourhoods group.
-
-Interestingly, from EDA we have already had clustering among neighbourhoods based on their contribution to the overall cases as well as premises type. However, we are also interested to reconfirm this argument using K-Means Clustering Analysis.
-
-# Perform K-Means Clustering
-
-## Data Pre-processing
-
-In accordance to the findings from EDA, we only consider 'Neighbourhood' and 'Premise Type' variables as basis of clustering analysis.
+We only consider 'Neighbourhood' and 'Premise Type' variables as basis of clustering analysis.
 
 Before performing cluster analysis, we need to transform our data so that it displays count of premises type by neighbourhoods.
 
@@ -440,17 +359,18 @@ Noted that there might be missing values as there might be no cases from certain
 
 ```{r, message=FALSE}
 # transform data
-bike_theft_clustering <- bike_theft %>%
+first_phase_bike_theft_clustering = bike_theft %>%
   group_by(NeighbourhoodName, Premises_Type) %>%
   summarise(count = n()) %>%
   pivot_wider(NeighbourhoodName, names_from = Premises_Type, values_from =count)
 
-bike_theft_clustering <- data.frame(bike_theft_clustering)
+first_phase_bike_theft_clustering = data.frame(first_phase_bike_theft_clustering)
 
 # replace missing values with 0
-bike_theft_clustering[is.na(bike_theft_clustering)] <- 0
+first_phase_bike_theft_clustering[is.na(first_phase_bike_theft_clustering)] <- 0
 
-bike_theft_clustering
+first_phase_bike_theft_clustering %>%
+  arrange(desc(Outside))
 ```
 
 After we transform the data, clustering analysis requires us to let the data in numerical standardize values only. To solve this, we let Neighbourhood names as row names instead of being part of data frame and standardize the values.
@@ -458,46 +378,652 @@ After we transform the data, clustering analysis requires us to let the data in 
 ```{r}
 # Transform the data into ready for K Means Clustering analysis
 
-k_means_bike_theft <- bike_theft_clustering %>%
+first_phase_k_means_bike_theft <- first_phase_bike_theft_clustering %>%
   select(-NeighbourhoodName)
-k_means_bike_theft <- scale(k_means_bike_theft)
-rownames(k_means_bike_theft) = bike_theft_clustering$NeighbourhoodName
+first_phase_k_means_bike_theft <- scale(first_phase_k_means_bike_theft)
+rownames(first_phase_k_means_bike_theft) = first_phase_bike_theft_clustering$NeighbourhoodName
 ```
 
-## Determine K value using Elbow Method
+### Determine K value using Elbow and Sillhoutte Method
 
 Using Elbow Method, we can draw conclusion that *optimal K value is 2* because this is the point where total within sum of square drops a lot.
-
-```{r}
-fviz_nbclust(k_means_bike_theft, kmeans, method = 'wss')
-```
-
-## Determine K value using Silhouette Method
 
 Using Silhouette Method, we can draw conclusion that *optimal K value is 2* because this is the point where average silhouette width is higher.
 
 ```{r}
-fviz_nbclust(k_means_bike_theft, kmeans, method = 'silhouette')
+elbow_graph <- fviz_nbclust(first_phase_k_means_bike_theft, kmeans, method = 'wss') +
+  labs(title = "Optimal Number of Clusters - Elbow Method")+
+  theme(
+    axis.title = element_text(size = 8),
+    axis.text = element_text(size = 8),
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.9)
+  )
+
+silhouette_graph <- fviz_nbclust(first_phase_k_means_bike_theft, kmeans, method = 'silhouette') +
+  labs(title = "Optimal Number of Clusters - Silhouette Method")+
+  theme(
+    axis.title = element_text(size = 8),
+    axis.text = element_text(size = 8),
+    plot.title = element_text(size = 10, face = "bold", hjust = 0.9)
+  )
+
+ggarrange(elbow_graph,
+          NULL,
+          silhouette_graph,
+          nrow = 1,
+          ncol = 3,
+          widths = c(1, 0.1, 1)
+          )
 ```
 
-## Final K-Means Clustering
+### First Stage K-Means Clustering Result
 
 The finding from following cluster plot is aligned with our previous argument from exploratory data analysis, which we can classify neighbourhoods based on bicycle theft premises type.
 
-All the 12 neighbourhoods that contribute to 50% bicycle theft cases can classify into a single group where bicycle theft mostly happened outside building premises.
+The top 10 neighbourhoods that contribute to 47% bicycle theft cases can classify into a single group where bicycle theft mostly happened outside building premises.
 
-Meanwhile, the rest 129 neighbourhoods will be classified into another group where the number of bicycle theft cases are mostly shared in outside building premises, apartments and houses.
+Meanwhile, the rest 130 neighbourhoods will be classified into another group where the number of bicycle theft cases are mostly shared in outside building premises, apartments and houses.
 
 ```{r}
-k_2 = kmeans(k_means_bike_theft, centers = 2, nstart = 50)
-fviz_cluster(k_2, data = k_means_bike_theft)
+# perform first round k-means clustering
+first_phase_k_means_clustering = kmeans(first_phase_k_means_bike_theft, centers = 2, nstart = 50)
+
+# visualise the result
+fviz_cluster(first_phase_k_means_clustering, 
+             data = first_phase_k_means_bike_theft, 
+             labelsize = 6, 
+             main = "Cluster Plot of Neighbourhood in Toronto", 
+             ggtheme=theme_bw())
 ```
 
 ```{r}
-#List of Top 12 Neighbourhood
-unique(top_12_neighbourhood$NeighbourhoodName)
+#mapping cluster group number to Neighbourhood Name
+bike_theft_by_neighbourhood %>%
+  left_join(tibble::rownames_to_column(data.frame(first_phase_k_means_clustering$cluster)), by=c("NeighbourhoodName" = "rowname"))
 ```
+
+
+## Exploring Cases by Bicycle Type
+
+```{r, message=FALSE}
+# bar chart of number of cases across neighbourhoods by bicycle type
+bicycle_type_overall <- bike_theft %>%
+  group_by(Bike_Type) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  ggplot(aes(x= reorder(Bike_Type, -n), y= n)) + 
+  geom_bar(stat='identity', fill = "#2B60DE") +
+  geom_text(aes(label=n), position=position_dodge(width=0.5), vjust= -0.5, size = 3) +
+  xlab("Bicycle Type") + 
+  ylab("Number of Cases") +
+  ggtitle("Overall Neighbourhoods") +
+  theme_bw()+
+  ylim(0, 10000)+
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(size = 10, hjust = -0.095, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9)
+  )
+
+# boxplot of number of cases in top 10 neighbourhoods by bicycle type
+bicycle_type_top_10 <- bike_theft %>%
+  filter(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, Bike_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(Bike_Type, levels = c("MT", "RG", "OT", "RC", "EL", "TO", "BM", "SC", "FO", "TR", "TA", "RE", "UN")), y = count)) + 
+  geom_boxplot(fill = "#FFDB6D", color = "#C4961A")+
+  xlab("Bicycle Type") +
+  ylab("Number of Cases") +
+  ggtitle("Top 10") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in next 32 neighbourhoods by bicycle type
+bicycle_type_next_32 <- bike_theft %>%
+  filter(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, Bike_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(Bike_Type, levels = c("MT", "RG", "OT", "RC", "EL", "TO", "BM", "SC", "FO", "TR", "TA", "RE", "UN")), y = count)) + 
+  geom_boxplot(color = "#306754", fill = "#50C878") +
+  xlab("Bicycle Type") +
+  #ylab("Number of Cases") +
+  ggtitle("Next Top 32") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in rest 98 neighbourhoods by bicycle type
+bicycle_type_others <- bike_theft %>%
+  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, Bike_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(Bike_Type, levels = c("MT", "RG", "OT", "RC", "EL", "TO", "BM", "SC", "FO", "TR", "TA", "RE", "UN")), y = count)) + 
+  geom_boxplot(color = "#F70D1A", fill = "#FF69B4") +
+  xlab("Bicycle Type") +
+  #ylab("Number of Cases") +
+  ggtitle("Rest of Neighbourhoods") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# combine altogether in a plot
+annotate_figure(ggarrange(bicycle_type_overall,
+                          ggarrange(bicycle_type_top_10,
+                                    bicycle_type_next_32, 
+                                    bicycle_type_others, 
+                                    nrow = 1, 
+                                    ncol = 3),
+                          nrow = 2,
+                          ncol = 1),
+                top = text_grob(expression(atop(bold("Number of Bicycle Theft Cases in Toronto by Bicycle Type (2014 - 2020)"), scriptstyle("Top 10 Neighbourhoods represent 47% of total cases, while Next Top 32 and The Rest contribute to 33% and 20% respectively")))))
+
+
+```
+<br>
+Mountain Bike and Regular Bike become two most reported stolen bicycles in Toronto during 2014 - 2020, and this also show across neighbourhood groups.
+
+## Exploring Cases by Reported Day
+
+```{r, message=FALSE}
+# bar chart of number of cases across neighbourhoods by reported day
+reported_day_overall <- bike_theft %>%
+  mutate(weekday_name = weekdays(Report_Date)) %>%
+  group_by(weekday_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + 
+  geom_bar(stat='identity', fill = "#2B60DE") +
+  geom_text(aes(label=count), position=position_dodge(width=0.5), vjust= -0.5, size = 3) +
+  ylim(0,5000) +
+  xlab("Day of Week") +
+  ylab("Number of Cases") +
+  ggtitle("Overall Neighbourhoods") +
+  theme_bw()+
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(size = 10, hjust = -0.095, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9)
+  )
+
+# boxplot of number of cases in top 10 neighbourhoods by reported day
+reported_day_top_10 <- bike_theft %>%
+  mutate(weekday_name = weekdays(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, weekday_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) + 
+  geom_boxplot(fill = "#FFDB6D", color = "#C4961A") +
+  xlab("Day of Week") +
+  ylab("Number of Cases") +
+  ggtitle("Top 10") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in next 32 neighbourhoods by reported day
+reported_day_next_32 <- bike_theft %>%
+  mutate(weekday_name = weekdays(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, weekday_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) +
+  geom_boxplot(color = "#306754", fill = "#50C878") +
+  xlab("Day of Week") +
+  #ylab("Number of Cases") +
+  ggtitle("Next Top 32") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in rest 98 neighbourhoods by reported day
+reported_day_others <- bike_theft %>%
+  mutate(weekday_name = weekdays(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, weekday_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(weekday_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")), y = count)) +
+  geom_boxplot(color = "#F70D1A", fill = "#FF69B4") +
+  xlab("Day of Week") +
+  #ylab("Number of Cases") +
+  ggtitle("Rest of Neighbourhoods") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+#combine altogether in a plot
+annotate_figure(ggarrange(reported_day_overall,
+                          ggarrange(reported_day_top_10,
+                                    reported_day_next_32, 
+                                    reported_day_others, 
+                                    nrow = 1, 
+                                    ncol = 3),
+                          nrow = 2,
+                          ncol = 1),
+                top = text_grob(expression(atop(bold("Number of Bicycle Theft Cases in Toronto by Reported Day (2014 - 2020)"), scriptstyle("Top 10 Neighbourhoods represent 47% of total cases, while Next Top 32 and The Rest contribute to 33% and 20% respectively")))))
+
+```
+<br>
+From the graph above, more theft cases were happened during weekdays and this is applied across neighbourhood groups. 
+
+## Exploring Cases by Reported Month
+
+```{r, message=FALSE}
+# bar chart of number of cases across neighbourhoods by reported month
+reported_month_overall <- bike_theft %>%
+  mutate(month_name = month.name[month(Report_Date)]) %>%
+  group_by(month_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(month_name, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")), y = count)) + 
+  geom_bar(stat='identity', fill = "#2B60DE") +
+  geom_text(aes(label=count), position=position_dodge(width=0.5), vjust= -0.5, size = 3) +
+  ylim(0,5000) +
+  xlab("Month") +
+  ylab("Number of Cases") +
+  ggtitle("Overall Neighbourhoods") +
+  theme_bw()+
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(size = 10, hjust = -0.095, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9),
+    axis.text.x = element_text(size = 8)
+  )
+
+# boxplot of number of cases in top 10 neighbourhoods by reported day
+reported_month_top_10 <- bike_theft %>%
+  mutate(month_name = month.name[month(Report_Date)])  %>%
+  filter(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, month_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(month_name, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")), y = count)) + 
+  geom_boxplot(fill = "#FFDB6D", color = "#C4961A") +
+  xlab("Month") +
+  ylab("Number of Cases") +
+  ggtitle("Top 10") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in next 32 neighbourhoods by reported day
+reported_month_next_32 <- bike_theft %>%
+  mutate(month_name = month.name[month(Report_Date)]) %>%
+  filter(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, month_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(month_name, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")), y = count)) + 
+  geom_boxplot(color = "#306754", fill = "#50C878") +
+  xlab("Month") +
+  #ylab("Number of Cases") +
+  ggtitle("Next Top 32") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+# boxplot of number of cases in rest 98 neighbourhoods by reported day
+reported_month_others <- bike_theft %>%
+  mutate(month_name = month.name[month(Report_Date)]) %>%
+  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, month_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(month_name, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")), y = count)) + 
+  geom_boxplot(color = "#F70D1A", fill = "#FF69B4") +
+  xlab("Month") +
+  #ylab("Number of Cases") +
+  ggtitle("Rest of Neighbourhoods") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(angle = 90, size = 7, hjust = 1)
+  )
+
+#combine altogether in a plot
+annotate_figure(ggarrange(reported_month_overall,
+                          ggarrange(reported_month_top_10,
+                                    reported_month_next_32, 
+                                    reported_month_others, 
+                                    nrow = 1, 
+                                    ncol = 3),
+                          nrow = 2,
+                          ncol = 1),
+                top = text_grob(expression(atop(bold("Number of Bicycle Theft Cases in Toronto by Reported Month (2014 - 2020)"), scriptstyle("Top 10 Neighbourhoods represent 47% of total cases, while Next Top 32 and The Rest contribute to 33% and 20% respectively")))))
+
+```
+<br>
+We also observed seasonality in number of bicycle theft cases, where the cases start to hike up during spring, reached its highest peak during summer and plummeted from fall season. This pattern is also reflected across neighbourhood groups. 
+
+
+## Exploring Cases by Reported Year
+
+### Identify trend by neighbourhood groups
+
+```{r, message=FALSE}
+# bar chart of number of cases across neighbourhoods by reported year
+reported_year_overall <- bike_theft %>%
+  mutate(year_name = year(Report_Date)) %>%
+  group_by(year_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(year_name), y = count)) + 
+  geom_bar(stat='identity', fill = "#2B60DE") +
+  geom_text(aes(label=count), position=position_dodge(width=0.5), vjust= -0.5, size = 3) +
+  ylim(0,5000) +
+  xlab("Year") +
+  ylab("Number of Cases") +
+  ggtitle("Overall Neighbourhoods") +
+  theme_bw()+
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(size = 10, hjust = -0.095, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9)
+  )
+
+# boxplot of number of cases in top 10 neighbourhoods by reported day
+reported_year_top_10 <- bike_theft %>%
+  mutate(year_name = year(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, year_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(year_name), y = count)) + 
+  geom_boxplot(fill = "#FFDB6D", color = "#C4961A") + 
+  xlab("Year") +
+  ylab("Number of Cases") +
+  ggtitle("Top 10") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(size = 7, hjust = 0.5)
+  )
+
+# boxplot of number of cases in next 32 neighbourhoods by reported day
+reported_year_next_32 <- bike_theft %>%
+  mutate(year_name = year(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, year_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(year_name), y = count)) +
+  geom_boxplot(color = "#306754", fill = "#50C878") +
+  xlab("Year") +
+  #ylab("Number of Cases") +
+  ggtitle("Next Top 32") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(size = 7, hjust = 0.5)
+  )
+
+# boxplot of number of cases in rest 98 neighbourhoods by reported day
+reported_year_others <- bike_theft %>%
+  mutate(year_name = year(Report_Date)) %>%
+  filter(NeighbourhoodName %in% c(unique(other_neighbourhood$NeighbourhoodName))) %>%
+  group_by(NeighbourhoodName, year_name) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x=factor(year_name), y = count)) +
+  geom_boxplot(color = "#F70D1A", fill = "#FF69B4") +
+  xlab("Year") +
+  #ylab("Number of Cases") +
+  ggtitle("Rest of Neighbourhoods") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title.y = element_blank(),
+    axis.title = element_text(size = 8),
+    axis.text.x = element_text(size = 7, hjust = 0.5)
+  )
+
+#combine altogether in a plot
+annotate_figure(ggarrange(reported_year_overall,
+                          ggarrange(reported_year_top_10,
+                                    reported_year_next_32, 
+                                    reported_year_others, 
+                                    nrow = 1, 
+                                    ncol = 3),
+                          nrow = 2,
+                          ncol = 1),
+                top = text_grob(expression(atop(bold("Number of Bicycle Theft Cases in Toronto by Reported Year (2014 - 2020)"), scriptstyle("Top 10 Neighbourhoods represent 47% of total cases, while Next Top 32 and The Rest contribute to 33% and 20% respectively")))))
+
+```
+<br>
+It is noted that in Next Top 32, the median value number of cases was increasing in 2020 while the other groups were stagnant.
+
+### Identify which neighborhoods that contribute the most to the increase of bicycle theft cases in 2020
+
+The graph below depicts top contributors to the incremental trend number of cases in 2020.
+
+```{r, message=FALSE, fig.width = 10}
+# annotate neighbourhood groupings
+neighbourhood_grouping <- bike_theft %>%
+  mutate(grouping = ifelse(NeighbourhoodName %in% c(unique(top_10_neighbourhood$NeighbourhoodName)),
+                           "Top 10",
+                           ifelse(NeighbourhoodName %in% c(unique(next_top_32_neighbourhood$NeighbourhoodName)),
+                                  "Next Top 32", "Rest of Neighbourhoods")),
+         year_name = year(Report_Date))
+
+# create graph year-on-year trend by neighbourhood group
+trend_by_neighbourhood_grouping_graph <- neighbourhood_grouping %>%
+  group_by(year_name, grouping) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = year_name, y = count, fill = factor(grouping, levels = c("Top 10", "Next Top 32", "Rest of Neighbourhoods")), label = count)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))+
+  ylim(0,5000) +
+  xlab("Year") +
+  ylab("Number of Cases") +
+  ggtitle("Y-o-Y bicycle theft cases by neighbourhood groups")+
+  guides(fill=guide_legend(title="Neighbourhood Groupings")) +
+  theme_bw()+
+  scale_fill_manual(values = c("#FFDB6D", "#50C878", "#FF69B4"))+
+  scale_x_continuous(breaks = seq(2014, 2020, 1)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 7),
+    plot.title = element_text(size = 10, hjust = 0, face ="bold"),
+    axis.title = element_text(size = 9),
+    axis.text = element_text(size = 9)
+  )
+
+# calculate change from 2019 to 2020, and take only top 10
+top_10_incremental_2020 <- neighbourhood_grouping %>%
+  mutate(year_name = paste("year_", year(Report_Date), sep="")) %>%
+  filter(year_name %in% c("year_2019", "year_2020")) %>%
+  group_by(NeighbourhoodName, year_name, grouping) %>%
+  summarise(count = n()) %>%
+  pivot_wider(c(NeighbourhoodName, grouping), names_from = year_name, values_from =count) %>%
+  replace_na(list(year_2019 = 0, year_2020 = 0)) %>%
+  mutate(change = year_2020 - year_2019) %>%
+  arrange(desc(change)) %>%
+  head(10)
+
+# create graph to show the changes of top 10 contributors
+top_10_incremental_2020_graph <- top_10_incremental_2020 %>%
+  ggplot(aes(x = reorder(NeighbourhoodName, change), 
+             y = change, 
+             fill = grouping,
+             label = change)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))+
+  ylim(0,80) +
+  scale_fill_manual(values = c("Top 10" = "#FFDB6D", "Next Top 32" = "#50C878", "Rest of Neighbourhoods" = "#FF69B4"))+
+  xlab("Neighbourhood") +
+  ylab("Increase in Number of Cases from 2019") +
+  ggtitle("Top 10 contributors to incremental cases in 2020")+
+  theme_bw()+
+  theme(
+    legend.title = element_text(size = 8, face = "bold"),
+    legend.text = element_text(size = 8),
+    plot.title = element_text(size = 10, face ="bold", hjust = 10),
+    axis.title = element_text(size = 7, face = "bold"),
+    axis.text.x = element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    legend.position = "none"
+  ) + 
+  coord_flip()
+ 
+# combine graphs altogether 
+ggarrange(trend_by_neighbourhood_grouping_graph,
+          NULL,
+          top_10_incremental_2020_graph,
+          nrow = 1,
+          widths = c(1, 0.1, 1)
+          )
+  
+```
+<br>
+From the chart above, we can see Next Top 32 contribute the incremental number of cases in 2020 by 252, followed by rest of neigbourhoods (221).
+
+Take top 10 contributors, we can see 6 out of 10 were coming from Next Top 32.
+
+### Identify which premise type that contribute the most to the increase of bicycle theft cases in 2020
+
+```{r, message=FALSE, fig.width = 10}
+# stacked barchart showing year-on-year trend by premise type
+trend_by_premise_graph <- neighbourhood_grouping %>%
+  group_by(year_name, Premises_Type) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(x = year_name, 
+             y = count, 
+             fill = factor(Premises_Type, 
+                           levels = c("Outside", "Apartment", "House", "Commercial", "Other", "Educational", "Transit")), 
+             label = count)) +
+  geom_bar(stat = "identity") +
+  geom_text(size = 3, position = position_stack(vjust = 0.5))+
+  ylim(0,5000) +
+  xlab("Year") +
+  ylab("Number of Cases") +
+  ggtitle("Y-o-Y Bicycle Theft Cases by Premise Type")+
+  guides(fill=guide_legend(title="Premise Type")) +
+  theme_bw()+
+  scale_x_continuous(breaks = seq(2014, 2020, 1)) +
+  scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))+
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.text = element_text(size = 7),
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 7, face = "bold"),
+    axis.text = element_text(size = 7)
+  )
+
+# calculate changes on number of cases from 2019 to 2020 by premise type, each neighbourhood
+top_10_incremental_2020_by_premise <- neighbourhood_grouping %>%
+  mutate(year_name = year(Report_Date)) %>%
+  filter(year_name %in% c(2019, 2020)) %>%
+  group_by(NeighbourhoodName, year_name, Premises_Type) %>%
+  summarise(count = n()) %>%
+  pivot_wider(NeighbourhoodName, names_from = c(Premises_Type, year_name), values_from =count) %>%
+  replace_na(list(Apartment_2019 = 0, Apartment_2020 = 0,
+                  House_2019 = 0, House_2020 = 0,
+                  Outside_2019 = 0, Outside_2020 = 0,
+                  Transit_2019 = 0, Transit_2020 = 0,
+                  Educational_2019 = 0, Educational_2020 = 0,
+                  Commercial_2019 = 0, Commercial_2020 = 0,
+                  Other_2019 = 0, Other_2020 = 0)) %>%
+  mutate(
+    Apartment = Apartment_2020 - Apartment_2019,
+    House = House_2020 - House_2019,
+    Outside = Outside_2020 - Outside_2019,
+    Transit = Transit_2020 - Transit_2019,
+    Educational = Educational_2020 - Educational_2019,
+    Commercial = Commercial_2020 - Commercial_2019,
+    Other = Other_2020 - Other_2019,
+    Overall = Apartment + House + Outside + Transit + Educational + Commercial + Other
+  ) %>%
+  arrange(desc(Overall)) %>%
+  head(10) %>%
+  select(-c(Apartment_2019, Apartment_2020,
+            House_2019, House_2020,
+            Outside_2019, Outside_2020,
+            Transit_2019, Transit_2020,
+            Educational_2019, Educational_2020,
+            Commercial_2019, Commercial_2020,
+            Other_2019, Other_2020,
+            Overall)) %>%
+  pivot_longer(!NeighbourhoodName, names_to = "Premises_Type", values_to = "Count")
+
+# create bar chart for top 10 contributors by premise type
+top_10_incremental_2020_by_premise_graph <- top_10_incremental_2020_by_premise %>%
+  ggplot(aes(x = factor(NeighbourhoodName, 
+                        levels= rev(c(unique(top_10_incremental_2020_by_premise$NeighbourhoodName)))), 
+             y = Count, 
+             fill = factor(Premises_Type, 
+                           levels = c("Outside", "Apartment", "House", "Commercial", "Other", "Educational", "Transit")),
+             label = Count
+             )
+         ) +
+  theme_bw()+
+  geom_bar(stat="identity") +
+  geom_text(size = 2, position = position_stack(vjust = 0.5))+
+  guides(fill=guide_legend(title="Premise Type")) +
+  xlab("Neighbourhood") +
+  ylab("Increase in Number of Cases from 2019") +
+  ggtitle("Top 10 Contributors by Premise Type")+
+  scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))+
+  theme(
+    legend.title = element_text(size = 8, face = "bold"),
+    legend.text = element_text(size = 8),
+    plot.title = element_text(size = 10, face ="bold"),
+    axis.title = element_text(size = 7, face = "bold"),
+    axis.text.x = element_text(size = 7),
+    axis.text.y = element_text(size = 7),
+    legend.position = "none"
+  ) + 
+  coord_flip()
+
+# combine graphs altogether
+ggarrange(trend_by_premise_graph,
+          NULL,
+          top_10_incremental_2020_by_premise_graph,
+          nrow = 1,
+          widths = c(1, 0.1, 1)
+          )
+  
+```
+<br>
+The number of bicycle theft cases at apartments shows a significant contribution to the increase in the number of cases in 2020. Further, this figure also contributes most to the incremental number of cases in Mount Pleasant West (49 cases), Willowdale East (28), and Bayview Village (22).
+<br>
 
 # Conclusion
 
-Toronto Police needs to pay attention to 12 neighbourhoods that contribute to 50% bicycle theft cases, particularly to the bicycles that are parked outside building premises.
+From the analysis, we can draw insights as follow.
+
+-   10 neighbourhoods are contributed to around 47% of overall reported bicycle theft cases in Toronto from 2014 - 2020. Majority of cases from this neighbourhood group happened when the bicycle is parked outside building premises.
+
+-   Apartments in Mount Pleasant View, Willowdale East, and Bayview Village; as these provide significant contribution to the incremental number of bicycle theft cases in 2020.
+
+
